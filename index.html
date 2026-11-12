@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>アイヌ語フラッシュカード</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  .card-container { perspective: 1000px; }
+  .card { width: 100%; height: 220px; position: relative; transform-style: preserve-3d; transition: transform 0.6s; cursor: pointer; }
+  .card.flipped { transform: rotateY(180deg); }
+  .card-face { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 1rem; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 1.5rem; box-shadow: 0 4px 20px rgba(0,0,0,0.12); }
+  .card-front { background: linear-gradient(135deg, #1e3a5f, #2563eb); color: white; }
+  .card-back { background: linear-gradient(135deg, #064e3b, #059669); color: white; transform: rotateY(180deg); }
+  .star-btn { font-size: 1.3rem; cursor: pointer; transition: transform 0.1s; }
+  .star-btn:hover { transform: scale(1.3); }
+  .progress-bar { transition: width 0.3s; }
+</style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+<div class="max-w-lg mx-auto px-4 py-6">
+  <h1 class="text-2xl font-bold text-center text-indigo-900 mb-1">アイヌ語フラッシュカード</h1>
+  <p class="text-center text-indigo-600 text-sm mb-5">アイヌ民族の言語 — 基本語彙 54語</p>
+
+  <!-- Filter + Stats -->
+  <div class="bg-white rounded-xl shadow p-4 mb-4">
+    <div class="flex flex-wrap gap-2 mb-3" id="category-filters"></div>
+    <div class="flex items-center gap-4 text-sm">
+      <span class="text-gray-500">進捗:</span>
+      <div class="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
+        <div id="progress-bar" class="progress-bar bg-indigo-500 h-full rounded-full" style="width:0%"></div>
+      </div>
+      <span id="progress-text" class="text-indigo-700 font-semibold text-xs"></span>
+    </div>
+  </div>
+
+  <!-- Card -->
+  <div class="card-container mb-4">
+    <div class="card" id="flashcard" onclick="flipCard()">
+      <div class="card-face card-front">
+        <div id="front-category" class="text-xs font-semibold opacity-70 mb-2 uppercase tracking-widest"></div>
+        <div id="front-word" class="text-4xl font-bold mb-2 text-center"></div>
+        <div id="front-romanization" class="text-lg opacity-80"></div>
+        <div class="text-xs opacity-50 mt-4">タップしてめくる</div>
+      </div>
+      <div class="card-face card-back">
+        <div id="back-meaning" class="text-2xl font-bold mb-3 text-center"></div>
+        <div id="back-usage" class="text-sm opacity-80 text-center mb-2"></div>
+        <div id="back-dialect" class="text-xs opacity-60"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rating stars -->
+  <div class="bg-white rounded-xl shadow p-4 mb-4">
+    <div class="text-sm font-semibold text-gray-600 mb-2 text-center">理解度を記録</div>
+    <div class="flex justify-center gap-3" id="star-rating"></div>
+  </div>
+
+  <!-- Controls -->
+  <div class="flex gap-3 mb-4">
+    <button onclick="prevCard()" class="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-300 transition">← 前へ</button>
+    <button onclick="shuffleCards()" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition">🔀 シャッフル</button>
+    <button onclick="nextCard()" class="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-300 transition">次へ →</button>
+  </div>
+  <div class="text-center text-sm text-gray-400" id="card-counter"></div>
+</div>
+
+<script>
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+const CARDS = [
+  // 自然 (Nature)
+  {cat:'自然', ainu:'kamuy', rom:'カムイ', jp:'神・精霊', usage:'万物に宿る神の概念', dialect:'沙流/千歳'},
+  {cat:'自然', ainu:'wakka', rom:'ワッカ', jp:'水', usage:'飲み水・川の水', dialect:'沙流'},
+  {cat:'自然', ainu:'ape', rom:'アペ', jp:'火', usage:'炉の火・調理の火', dialect:'沙流'},
+  {cat:'自然', ainu:'sir', rom:'シリ', jp:'大地・地面', usage:'土地・山・場所の意味も', dialect:'沙流'},
+  {cat:'自然', ainu:'toi', rom:'トイ', jp:'土・土地', usage:'農耕・土の意味', dialect:'千歳'},
+  {cat:'自然', ainu:'nupuri', rom:'ヌプリ', jp:'山', usage:'「幌別」等の地名に含まれる', dialect:'沙流'},
+  {cat:'自然', ainu:'pet', rom:'ペッ', jp:'川', usage:'「石狩川」→ Iskar-pet', dialect:'沙流'},
+  {cat:'自然', ainu:'atuy', rom:'アトゥイ', jp:'海', usage:'漁の場所', dialect:'沙流'},
+  {cat:'自然', ainu:'upas', rom:'ウパシ', jp:'雪', usage:'「大雪山」の語源要素', dialect:'沙流'},
+  {cat:'自然', ainu:'rera', rom:'レラ', jp:'風', usage:'自由の象徴としても使われる', dialect:'静内'},
+  {cat:'自然', ainu:'esto', rom:'エスト', jp:'霧', usage:'海霧・山霧', dialect:'千歳'},
+
+  // 動物 (Animals)
+  {cat:'動物', ainu:'kim-un kamuy', rom:'キムンカムイ', jp:'熊', usage:'山の神（直訳: 山にいる神）', dialect:'沙流'},
+  {cat:'動物', ainu:'repun kamuy', rom:'レプンカムイ', jp:'シャチ（虎鯨）', usage:'海の神', dialect:'沙流'},
+  {cat:'動物', ainu:'cikap', rom:'チカプ', jp:'鳥', usage:'一般的な鳥の総称', dialect:'沙流'},
+  {cat:'動物', ainu:'sep', rom:'セプ', jp:'鮭', usage:'アイヌ文化の中心的な食料', dialect:'沙流'},
+  {cat:'動物', ainu:'iso', rom:'イソ', jp:'熊（別名）', usage:'儀礼的文脈で使用', dialect:'静内'},
+  {cat:'動物', ainu:'noya', rom:'ノヤ', jp:'キツネ', usage:'エゾキツネ', dialect:'千歳'},
+  {cat:'動物', ainu:'siok', rom:'シオク', jp:'鹿', usage:'エゾシカ・狩猟の対象', dialect:'沙流'},
+  {cat:'動物', ainu:'kapiv', rom:'カピウ', jp:'ウサギ', usage:'エゾユキウサギ', dialect:'千歳'},
+  {cat:'動物', ainu:'aep', rom:'アエプ', jp:'食べ物・魚', usage:'食べ物全般を指すことも', dialect:'沙流'},
+
+  // 身体 (Body)
+  {cat:'身体', ainu:'yupke', rom:'ユプケ', jp:'頭', usage:'頭部・考える場所', dialect:'沙流'},
+  {cat:'身体', ainu:'sakehe', rom:'サケヘ', jp:'目', usage:'視覚の器官', dialect:'沙流'},
+  {cat:'身体', ainu:'kina', rom:'キナ', jp:'草・毛', usage:'体毛・植物の毛', dialect:'千歳'},
+  {cat:'身体', ainu:'nimak', rom:'ニマク', jp:'手', usage:'労働する手', dialect:'沙流'},
+  {cat:'身体', ainu:'kema', rom:'ケマ', jp:'足', usage:'移動する足', dialect:'沙流'},
+  {cat:'身体', ainu:'paro', rom:'パロ', jp:'口', usage:'話す口・入口の意味も', dialect:'沙流'},
+  {cat:'身体', ainu:'ki', rom:'キ', jp:'鼻', usage:'においを感じる', dialect:'千歳'},
+  {cat:'身体', ainu:'onnekur', rom:'オンネクル', jp:'老人（男）', usage:'長老・尊敬される存在', dialect:'沙流'},
+
+  // 挨拶 (Greetings)
+  {cat:'挨拶', ainu:'irankarapte', rom:'イランカラプテ', jp:'こんにちは（いらっしゃいませ）', usage:'正式な挨拶・歓迎の言葉', dialect:'沙流'},
+  {cat:'挨拶', ainu:'iyairaykere', rom:'イヤイライケレ', jp:'ありがとう', usage:'感謝の言葉', dialect:'沙流'},
+  {cat:'挨拶', ainu:'hunna', rom:'フンナ', jp:'はい・そうです', usage:'肯定の返事', dialect:'沙流'},
+  {cat:'挨拶', ainu:'somo', rom:'ソモ', jp:'いいえ・違います', usage:'否定の返事', dialect:'沙流'},
+  {cat:'挨拶', ainu:'e=kor wen no?', rom:'エコルウェンノ', jp:'お元気ですか', usage:'相手の状態を尋ねる', dialect:'沙流'},
+  {cat:'挨拶', ainu:'pirka', rom:'ピリカ', jp:'良い・きれい', usage:'形容詞。褒め言葉として広く使われる', dialect:'沙流'},
+  {cat:'挨拶', ainu:'ku=e', rom:'クエ', jp:'食べる（私が食べる）', usage:'ku=は一人称接辞', dialect:'沙流'},
+
+  // 数 (Numbers)
+  {cat:'数', ainu:'shine', rom:'シネ', jp:'1', usage:'基数詞', dialect:'沙流'},
+  {cat:'数', ainu:'tu', rom:'トゥ', jp:'2', usage:'二つ・二人', dialect:'沙流'},
+  {cat:'数', ainu:'re', rom:'レ', jp:'3', usage:'三つ', dialect:'沙流'},
+  {cat:'数', ainu:'ine', rom:'イネ', jp:'4', usage:'四つ', dialect:'沙流'},
+  {cat:'数', ainu:'ashik', rom:'アシキ', jp:'5', usage:'五つ（20進法体系の基本）', dialect:'沙流'},
+  {cat:'数', ainu:'iwan', rom:'イワン', jp:'6', usage:'六つ', dialect:'沙流'},
+  {cat:'数', ainu:'arwan', rom:'アルワン', jp:'7', usage:'七つ', dialect:'沙流'},
+  {cat:'数', ainu:'turpesh', rom:'トゥルペシュ', jp:'8', usage:'八つ', dialect:'静内'},
+  {cat:'数', ainu:'shinep-san-pe', rom:'シネプサンペ', jp:'9', usage:'直訳: 一つ足りない（10から）', dialect:'沙流'},
+  {cat:'数', ainu:'wan', rom:'ワン', jp:'10', usage:'一束（20進法基準）', dialect:'沙流'},
+  {cat:'数', ainu:'hotne', rom:'ホッネ', jp:'20', usage:'一人分（指・足の数）', dialect:'沙流'},
+
+  // Additional
+  {cat:'自然', ainu:'chise', rom:'チセ', jp:'家・住居', usage:'伝統的なアイヌの住居', dialect:'沙流'},
+  {cat:'自然', ainu:'kor', rom:'コル', jp:'持つ・所有する', usage:'動詞として広く使用', dialect:'沙流'},
+  {cat:'動物', ainu:'kotan-kor kamuy', rom:'コタンコルカムイ', jp:'シマフクロウ', usage:'村を守る神の鳥', dialect:'沙流'},
+  {cat:'挨拶', ainu:'arisanke', rom:'アリサンケ', jp:'さようなら', usage:'別れの挨拶', dialect:'千歳'},
+  {cat:'自然', ainu:'kotan', rom:'コタン', jp:'村・集落', usage:'アイヌの伝統的集落単位', dialect:'沙流'},
+  {cat:'身体', ainu:'ram', rom:'ラム', jp:'心・精神', usage:'心・魂の概念', dialect:'沙流'},
+];
+
+const CATEGORIES = ['すべて', '自然', '動物', '身体', '挨拶', '数'];
+let currentCategory = 'すべて';
+let filteredCards = [...CARDS];
+let currentIndex = 0;
+let isFlipped = false;
+let ratings = JSON.parse(localStorage.getItem('ainu-ratings') || '{}');
+
+function getFilteredCards() {
+  return currentCategory === 'すべて' ? CARDS : CARDS.filter(c => c.cat === currentCategory);
+}
+
+function buildCategoryFilters() {
+  const container = document.getElementById('category-filters');
+  container.innerHTML = '';
+  CATEGORIES.forEach(cat => {
+    const btn = document.createElement('button');
+    btn.className = 'px-3 py-1 rounded-full text-sm font-semibold transition ' + (cat === currentCategory ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200');
+    btn.textContent = cat;
+    btn.onclick = () => { currentCategory = cat; filteredCards = getFilteredCards(); currentIndex = 0; buildCategoryFilters(); showCard(); };
+    container.appendChild(btn);
+  });
+}
+
+function showCard() {
+  if (!filteredCards.length) return;
+  const card = filteredCards[currentIndex];
+  isFlipped = false;
+  document.getElementById('flashcard').classList.remove('flipped');
+
+  document.getElementById('front-category').textContent = card.cat;
+  document.getElementById('front-word').textContent = card.ainu;
+  document.getElementById('front-romanization').textContent = card.rom;
+  document.getElementById('back-meaning').textContent = card.jp;
+  document.getElementById('back-usage').textContent = card.usage;
+  document.getElementById('back-dialect').textContent = '方言: ' + card.dialect;
+  document.getElementById('card-counter').textContent = (currentIndex+1) + ' / ' + filteredCards.length;
+
+  updateStars();
+  updateProgress();
+}
+
+function flipCard() {
+  isFlipped = !isFlipped;
+  document.getElementById('flashcard').classList.toggle('flipped', isFlipped);
+}
+
+function nextCard() { currentIndex = (currentIndex + 1) % filteredCards.length; showCard(); }
+function prevCard() { currentIndex = (currentIndex - 1 + filteredCards.length) % filteredCards.length; showCard(); }
+
+function shuffleCards() {
+  for (let i = filteredCards.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [filteredCards[i], filteredCards[j]] = [filteredCards[j], filteredCards[i]];
+  }
+  currentIndex = 0;
+  showCard();
+}
+
+function buildStars() {
+  const container = document.getElementById('star-rating');
+  container.innerHTML = '';
+  [1,2,3,4,5].forEach(n => {
+    const btn = document.createElement('button');
+    btn.className = 'star-btn';
+    btn.id = 'star-' + n;
+    btn.textContent = '☆';
+    btn.title = ['', '全然わからない', 'むずかしい', 'なんとなく', 'わかる', '完璧'][n];
+    btn.onclick = () => rateCard(n);
+    container.appendChild(btn);
+  });
+}
+
+function updateStars() {
+  if (!filteredCards.length) return;
+  const card = filteredCards[currentIndex];
+  const key = card.ainu;
+  const rating = ratings[key] || 0;
+  [1,2,3,4,5].forEach(n => {
+    const btn = document.getElementById('star-' + n);
+    if (btn) btn.textContent = n <= rating ? '⭐' : '☆';
+  });
+}
+
+function rateCard(n) {
+  if (!filteredCards.length) return;
+  const card = filteredCards[currentIndex];
+  ratings[card.ainu] = n;
+  localStorage.setItem('ainu-ratings', JSON.stringify(ratings));
+  updateStars();
+  updateProgress();
+}
+
+function updateProgress() {
+  const rated = filteredCards.filter(c => ratings[c.ainu]).length;
+  const pct = filteredCards.length ? (rated / filteredCards.length * 100) : 0;
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-text').textContent = rated + '/' + filteredCards.length + ' 評価済み';
+}
+
+buildCategoryFilters();
+buildStars();
+filteredCards = getFilteredCards();
+showCard();
+</script>
+</body>
+</html>
